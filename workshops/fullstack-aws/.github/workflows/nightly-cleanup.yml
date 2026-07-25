@@ -1,0 +1,111 @@
+name: Nightly Workshop Cleanup
+
+# Tag-driven sweep of lab resources (tools/cleanup-student-resources.py).
+# Deletes anything tagged workshop=full-stack UNLESS it's tagged autodelete=false.
+#
+# Runs every Sunday night. Cron is in UTC: 03:00 UTC Monday = Sunday 11:00 PM
+# Eastern (EDT, UTC-4). Adjust the cron below if the intended local time zone
+# or DST offset changes.
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'   # Sunday 23:00 America/Toronto (EDT) -> Monday 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run only (no deletions)'
+        type: boolean
+        required: false
+        default: false
+      aws_region:
+        description: 'AWS region to sweep'
+        required: false
+        default: 'us-east-1'
+      workshop:
+        description: 'Required workshop tag value to match'
+        required: false
+        default: 'full-stack'
+      aws_access_key_id:
+        description: 'AWS Access Key ID — leave blank to use repo secret AWS_ACCESS_KEY_ID'
+        required: false
+        default: ''
+      aws_secret_access_key:
+        description: 'AWS Secret Access Key — leave blank to use repo secret AWS_SECRET_ACCESS_KEY'
+        required: false
+        default: ''
+
+env:
+  AWS_REGION: ${{ inputs.aws_region || 'us-east-1' }}
+  WORKSHOP: ${{ inputs.workshop || 'full-stack' }}
+  # The schedule trigger has no `inputs` context, so this only ever evaluates
+  # true for a manual dispatch that explicitly requested a dry run.
+  DRY_RUN: ${{ inputs.dry_run == true }}
+
+jobs:
+  cleanup:
+    name: Sweep and delete tagged lab resources
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install boto3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ inputs.aws_access_key_id || secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ inputs.aws_secret_access_key || secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Run cleanup sweep
+        id: sweep
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARGS=(--region "${AWS_REGION}" --workshop "${WORKSHOP}")
+          if [ "${DRY_RUN}" != "true" ]; then
+            ARGS+=(--delete)
+          fi
+          echo "Running: python tools/cleanup-student-resources.py ${ARGS[*]}"
+          python tools/cleanup-student-resources.py "${ARGS[@]}" 2>&1 | tee sweep-output.log
+
+      - name: Publish cleanup summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Nightly Workshop Cleanup"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **Region** | ${AWS_REGION} |"
+            echo "| **Workshop tag** | ${WORKSHOP} |"
+            echo "| **Mode** | $([ "${DRY_RUN}" = "true" ] && echo 'Dry run' || echo 'Delete') |"
+            echo "| **Triggered by** | ${{ github.event_name == 'schedule' && 'schedule (Sunday night)' || github.actor }} |"
+            echo "| **Status** | ${{ job.status }} |"
+            echo ""
+            echo "### Summary"
+            echo '```'
+            tail -n 20 sweep-output.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload full sweep log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cleanup-sweep-log
+          path: sweep-output.log
+          retention-days: 14

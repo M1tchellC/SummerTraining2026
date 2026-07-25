@@ -169,15 +169,20 @@ def normalize_tags(raw):
             out[str(k).lower()] = str(v)
     return out
 
-def eligible_for_deletion(raw_tags):
-    """The core rule: delete unless autodelete is explicitly false. Also requires the
+def protection_reason(raw_tags):
+    """Returns why a resource is NOT eligible for deletion, or None if it is eligible.
+    The core rule: delete unless autodelete is explicitly false. Also requires the
     workshop tag to match if --workshop was given."""
     tags = normalize_tags(raw_tags)
     if tags.get("autodelete", "").strip().lower() == "false":
-        return False
+        return "autodelete=false"
     if WORKSHOP is not None and tags.get("workshop", "").strip().lower() != WORKSHOP.strip().lower():
-        return False
-    return True
+        actual = tags.get("workshop")
+        return f"workshop={actual} (expected {WORKSHOP})" if actual else f"no workshop tag (expected {WORKSHOP})"
+    return None
+
+def eligible_for_deletion(raw_tags):
+    return protection_reason(raw_tags) is None
 
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -222,8 +227,8 @@ errors  = []
 def log(resource_type, name):
     print(f"  {'[DRY RUN]' if DRY_RUN else '[DELETED]'} {resource_type}: {name}")
 
-def log_protected(resource_type, name):
-    print(f"  [PROTECTED: autodelete=false] {resource_type}: {name}")
+def log_protected(resource_type, name, reason):
+    print(f"  [PROTECTED: {reason}] {resource_type}: {name}")
 
 EXPIRED_TOKEN_CODES = {"InvalidClientTokenId", "ExpiredTokenException", "RequestExpired"}
 
@@ -255,8 +260,9 @@ for page in paginator.paginate():
         except ClientError as e:
             record_error("Lambda (tags)", name, e)
             continue
-        if not eligible_for_deletion(tags):
-            log_protected("Lambda", name)
+        reason = protection_reason(tags)
+        if reason:
+            log_protected("Lambda", name, reason)
             continue
         log("Lambda", name)
         deleted.append(("Lambda", name))
@@ -288,8 +294,9 @@ for prefix in ("/aws/lambda/", "/aws/apigateway/"):
             except ClientError as e:
                 record_error("Log Group (tags)", name, e)
                 continue
-            if not eligible_for_deletion(tags):
-                log_protected("Log Group", name)
+            reason = protection_reason(tags)
+            if reason:
+                log_protected("Log Group", name, reason)
                 continue
             log("Log Group", name)
             deleted.append(("Log Group", name))
@@ -309,8 +316,9 @@ for api in response.get("Items", []):
     if not name_matches_target(name):
         continue
     tags = api.get("Tags", {})
-    if not eligible_for_deletion(tags):
-        log_protected("API Gateway", f"{name} ({api['ApiId']})")
+    reason = protection_reason(tags)
+    if reason:
+        log_protected("API Gateway", f"{name} ({api['ApiId']})", reason)
         continue
     log("API Gateway", f"{name} ({api['ApiId']})")
     deleted.append(("API Gateway", name))
@@ -359,8 +367,9 @@ for page in paginator.paginate():
             surviving_dist_ids.add(dist_id)
             continue
 
-        if not eligible_for_deletion(tags):
-            log_protected("CloudFront Distribution", f"{dist_id} (origin: {origin_summary})")
+        reason = protection_reason(tags)
+        if reason:
+            log_protected("CloudFront Distribution", f"{dist_id} (origin: {origin_summary})", reason)
             surviving_dist_ids.add(dist_id)
             continue
 
@@ -473,8 +482,9 @@ while True:
         except ClientError as e:
             record_error("WAF Web ACL (tags)", name, e)
             continue
-        if not eligible_for_deletion(tags):
-            log_protected("WAF Web ACL", name)
+        reason = protection_reason(tags)
+        if reason:
+            log_protected("WAF Web ACL", name, reason)
             continue
         log("WAF Web ACL", name)
         deleted.append(("WAF Web ACL", name))
@@ -517,8 +527,9 @@ for bucket in response.get("Buckets", []):
         else:
             record_error("S3 Bucket (tags)", name, e)
             continue
-    if not eligible_for_deletion(tags):
-        log_protected("S3 Bucket", name)
+    reason = protection_reason(tags)
+    if reason:
+        log_protected("S3 Bucket", name, reason)
         continue
     log("S3 Bucket", name)
     deleted.append(("S3 Bucket", name))
@@ -546,8 +557,9 @@ for page in paginator.paginate():
         except ClientError as e:
             record_error("DynamoDB Table (tags)", name, e)
             continue
-        if not eligible_for_deletion(tags):
-            log_protected("DynamoDB Table", name)
+        reason = protection_reason(tags)
+        if reason:
+            log_protected("DynamoDB Table", name, reason)
             continue
         log("DynamoDB Table", name)
         deleted.append(("DynamoDB Table", name))
@@ -572,8 +584,9 @@ for reservation in response["Reservations"]:
         name = next((t["Value"] for t in tags_list if t["Key"] == "Name"), iid)
         if not name_matches_target(name):
             continue
-        if not eligible_for_deletion(tags_list):
-            log_protected("EC2 Instance", f"{name} ({iid})")
+        reason = protection_reason(tags_list)
+        if reason:
+            log_protected("EC2 Instance", f"{name} ({iid})", reason)
             continue
         log("EC2 Instance", f"{name} ({iid})")
         deleted.append(("EC2 Instance", name))
@@ -600,8 +613,9 @@ for kp in response["KeyPairs"]:
         continue
     if not name_matches_target(name):
         continue
-    if not eligible_for_deletion(tags):
-        log_protected("Key Pair", name)
+    reason = protection_reason(tags)
+    if reason:
+        log_protected("Key Pair", name, reason)
         continue
     log("Key Pair", name)
     deleted.append(("Key Pair", name))
@@ -625,8 +639,9 @@ for sg in response["SecurityGroups"]:
         continue
     if not name_matches_target(name):
         continue
-    if not eligible_for_deletion(tags):
-        log_protected("Security Group", f"{name} ({sgid})")
+    reason = protection_reason(tags)
+    if reason:
+        log_protected("Security Group", f"{name} ({sgid})", reason)
         continue
     log("Security Group", f"{name} ({sgid})")
     deleted.append(("Security Group", name))
