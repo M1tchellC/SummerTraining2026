@@ -37,7 +37,7 @@ parser.add_argument("--roster",  required=True, help="Path to the roster CSV (us
 parser.add_argument("--region",  default="us-east-1")
 parser.add_argument("--group",   default="fullstack_student_group")
 parser.add_argument("--policy-name", default="FullStackStudentSandboxPolicy")
-parser.add_argument("--policy-file", default=os.path.join(os.path.dirname(__file__), "..", "student-iam-policy.json"))
+parser.add_argument("--policy-file", default=os.path.join(os.path.dirname(__file__), "student-iam-policy.json"))
 parser.add_argument("--lambda-role-name", default="quicklabs-fullstack-shared-lambda-exec")
 parser.add_argument("--created-date", required=True, help="dd-mmm-yyyy, e.g. 16-Jul-2026")
 parser.add_argument("--profile", default=None)
