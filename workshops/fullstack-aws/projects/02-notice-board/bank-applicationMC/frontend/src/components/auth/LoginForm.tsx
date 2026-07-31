@@ -24,14 +24,14 @@ function LoginForm({ onSubmit }: LoginFormProps) {
         <CardTitle>
           <h1 className="font-heading text-3xl">Welcome back</h1>
         </CardTitle>
-        <CardDescription className="pl-1">Log in to view your accounts</CardDescription>
+        <CardDescription className="pl-1">Type in the textbox and click submit to post to the notice board</CardDescription>
       </CardHeader>
 
       <form className="flex flex-col gap-6" onSubmit={onSubmit}>
         <CardContent>
           <FieldGroup className="gap-4">
             <Field>
-              <FieldLabel htmlFor="email">Email address</FieldLabel>
+              <FieldLabel htmlFor="email">Message</FieldLabel>
               <Input
                 id="email"
                 name="email"
@@ -40,23 +40,12 @@ function LoginForm({ onSubmit }: LoginFormProps) {
                 required
               />
             </Field>
-
-            <Field>
-              <FieldLabel htmlFor="password">Password</FieldLabel>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-              />
-            </Field>
           </FieldGroup>
         </CardContent>
 
         <CardFooter className="flex-col gap-3">
           <Button className="w-full" size="lg" type="submit">
-            Sign in securely
+            Post message to board
           </Button>
           <Button
             className="w-full"
